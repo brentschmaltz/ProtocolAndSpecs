@@ -197,15 +197,12 @@ StyleCop.Cache
 node_modules
 
 
-# Wilson project folder
-.nuget/*
-Artifacts/*
 lib/*
 log
 packages/*
 stash/*
-TestResults/*
 docs/*
 backup/*
 .testPublish/
-/.vs/
+.vs/*
+*.ide

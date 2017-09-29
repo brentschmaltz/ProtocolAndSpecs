@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.26730.3
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OAuthProofOfPossesion", "OAuthProofOfPossesion\OAuthProofOfPossesion.csproj", "{A2527D4D-787D-47BD-A2CD-01165B384F19}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OAuthProofOfPossesion", "OAuthProofOfPossesion\OAuthProofOfPossesion.csproj", "{464D1288-B1A6-45AA-BE84-E3086366F8CC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,15 +11,15 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{A2527D4D-787D-47BD-A2CD-01165B384F19}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A2527D4D-787D-47BD-A2CD-01165B384F19}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A2527D4D-787D-47BD-A2CD-01165B384F19}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A2527D4D-787D-47BD-A2CD-01165B384F19}.Release|Any CPU.Build.0 = Release|Any CPU
+		{464D1288-B1A6-45AA-BE84-E3086366F8CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{464D1288-B1A6-45AA-BE84-E3086366F8CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{464D1288-B1A6-45AA-BE84-E3086366F8CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{464D1288-B1A6-45AA-BE84-E3086366F8CC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {B8018749-A6EF-40C3-A1DD-5E09EE7819DC}
+		SolutionGuid = {AFD4F2D3-3073-4883-8FA3-CDE46304BD23}
 	EndGlobalSection
 EndGlobal
