@@ -1,16 +1,44 @@
-﻿using System;
+﻿//------------------------------------------------------------------------------
+//
+// Copyright (c) Brent Schmaltz.
+// All rights reserved.
+//
+// This code is licensed under the MIT License.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files(the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and / or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions :
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+//------------------------------------------------------------------------------
+
+using System;
+using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace OAuthProofOfPossesion
 {
     class Program
     {
-        private ConfigurationManager<OpenIdConnectConfiguration> _configManager = new ConfigurationManager<OpenIdConnectConfiguration>(Authority + ".well-known/openid-configuration", new OpenIdConnectConfigurationRetriever());
-        private OpenIdConnectProtocolValidator _protocolValidator = new OpenIdConnectProtocolValidator();
-        private JwtSecurityTokenHandler _tokenHandler = new JwtSecurityTokenHandler();
+        private static ConfigurationManager<OpenIdConnectConfiguration> _configManager = new ConfigurationManager<OpenIdConnectConfiguration>(Authority + ".well-known/openid-configuration", new OpenIdConnectConfigurationRetriever());
 
         // S2SMiddleTier metadata
         public const string MiddleTierAddress = "http://localhost:38273/";
@@ -24,111 +52,109 @@ namespace OAuthProofOfPossesion
         public const string Authority = "https://login.microsoftonline.com/cyrano.onmicrosoft.com/";
         public const string ClientId = "905a5e2a-ebf5-4b70-8eb0-fd26303b6a5f";
         public const string RedirectUri = Address;
+        public const string Resource = "http://S2SBackend";
         public const string Thumbprint = "5C346E0642C1113812C7775F0CB5336D8DFAFC4B";
 
         static void Main(string[] args)
         {
-            Console.WriteLine("Hello World!");
+            var config = _configManager.GetConfigurationAsync().Result;
+            var appTokenResponse = GetAppToken(Authority);
+            var principal = TokenHandler.ValidateToken(
+                                appTokenResponse.AccessToken,
+                                new TokenValidationParameters
+                                {
+                                    ValidIssuer = config.Issuer,
+                                    ValidAudience = Resource,
+                                    IssuerSigningKeys = config.SigningKeys
+                                },
+                                out SecurityToken token
+                            );
+
+            var popAppTokenResponse = GetPopAppToken(Authority);
         }
 
-        private static X509Certificate2 FindCertificate(StoreName storeName, StoreLocation storeLocation, string thumbprint)
-        {
-            X509Store x509Store = new X509Store(storeName, storeLocation);
-            x509Store.Open(OpenFlags.ReadOnly);
-            try
-            {
-                foreach (var cert in x509Store.Certificates)
-                {
-                    if (cert.Thumbprint.Equals(thumbprint, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return cert;
-                    }
-                }
-
-                throw new ArgumentException($"S2SWebsite communicates with AzureAD using a Certificate with thumbprint: '{thumbprint}'. SAL_SDK includes '<ROOT>\\src\\Certs\\S2SWebSite.pfx' that needs to be imported into 'LocalComputer\\Personal' (password is: S2SWebSite).{1}'<ROOT>\\src\\ToolsAndScripts\\AddPfxToCertStore.ps1' can be used install certs.{1}Make sure to open the powershell window as an administrator.");
-            }
-            finally
-            {
-                if (x509Store != null)
-                {
-                    x509Store.Close();
-                }
-            }
-        }
-
-        public string GetAppToken(string authority)
+        public static OAuthTokenResponse GetAppToken(string authority)
         {
             string resource = "http://S2SBackend";
-            var cert = FindCertificate(StoreName.My, StoreLocation.LocalMachine, MiddleTierThumbprint);
-
+            var cert = CryptoUtils.FindCertificate(StoreName.My, StoreLocation.LocalMachine, MiddleTierThumbprint);
             var config = _configManager.GetConfigurationAsync().Result;
-            // This token represents an access token between the two services.
-            // Ideally it would be obtained once and refreshed, using the refresh token, when expired.
-
             var audience = string.Format(@"https://sts.windows.net/{0}/", MiddleTierTennant);
-            var jwt = CryptoUtils.CreateClientAssertion(MiddleTierClientId, MiddleTierClientId, MiddleTierClientId, audience, new SigningCredentials(new X509SecurityKey(cert), SecurityAlgorithms.RsaSha256));
-            var jwtToken = new JwtSecurityToken(jwt);
+            var jwt = CryptoUtils.CreateClientAssertion(MiddleTierClientId, audience, new SigningCredentials(new X509SecurityKey(cert), SecurityAlgorithms.RsaSha256));
             var client = new HttpClient();
-            var request = new HttpRequestMessage(HttpMethod.Post, config.TokenEndpoint);
-            request.Method = HttpMethod.Post;
-            request.Content = new FormUrlEncodedContent(GetTokenParameters(jwt, resource));
+            var request = new HttpRequestMessage
+            {
+                Content = new FormUrlEncodedContent(GetAppTokenParameters(jwt)),
+                Method = HttpMethod.Post,
+                RequestUri = new Uri(config.TokenEndpoint)
+            };
+
             var response = client.SendAsync(request).Result;
             if (response.IsSuccessStatusCode)
-            {
-                string responseString = response.Content.ReadAsStringAsync().Result;
-            }
+                return OAuthTokenResponse.Create(response.Content.ReadAsStringAsync().Result);
 
-            return string.Empty;
-            //var authenticationResult = authenticationContext.AcquireTokenAsync(resource, clientCred).Result;
-            //return authenticationResult.AccessToken;
+            throw new OAuthTokenResponseException(response.ToString());
         }
 
-        public Dictionary<string, string> GetTokenParameters(string assertion, string resource)
+        public static Dictionary<string, string> GetAppTokenParameters(string assertion)
         {
             return new Dictionary<string, string>
             {
-                {"client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" },
-                {"client_assertion", assertion },
-                { "grant_type", "client_credentials" },
-                { "resource", resource }
+                {"client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"},
+                {"client_assertion", assertion},
+                {"grant_type", "client_credentials"},
+                {"resource", Resource}
+            };
+        }
+
+
+//  To obtain a proof-of-possession protected token, an extension of the client credential flow is used. 
+//	POST https://login.microsoftonline.com/consumers/oauth2/v2.0/token
+//	grant_type=client_credentials&//  client_id=2f600644-04bb-460c-93a5-e525d00118b2&//  scope=5d344dd6-5fa0-4eee-83fc-98d688c96864/.default&//  request=eyJhbGci...
+//	The request parameter is a signed JWT Request based on Open ID Connect. It will contain the proof-of-possession key. 
+//	{//      "typ":"JWT",//      "alg":"RS256",//      "x5t":"B2J4nSsaX6R5VjjuTjGlHV9S6_U"//  }//  .//  {//      "aud":"https://login.microsoftonline.com/consumers/oauth2/v2.0/token"//      "iss":"2f600644-04bb-460c-93a5-e525d00118b2"//      "iat":1489707630,//      "exp":1489711230,//      "pop_jwk":{"kty":"RSA","n":"0vx7agoebGcQSu5JsGY4Hc5n9y...","e":"AQAB","alg":"RS256","kid":"1"}//  }//.//[Signature with registered app key]
+
+        public static Dictionary<string, string> GetPopAppTokenParameters(string assertion, string clientId)
+        {
+            return new Dictionary<string, string>
+            {
+                {"grant_type", "client_credentials"},
+                {"clientId", clientId },
+                //{"scope", "95af3226-0b0c-42ab-abac-2ea26bd0e6a8/.default" },
+                {"resource", Resource },
+                {"request", assertion}
+            };
+        }		
+
+        public static OAuthTokenResponse GetPopAppToken(string authority)
+        {
+            var cert = CryptoUtils.FindCertificate(StoreName.My, StoreLocation.LocalMachine, MiddleTierThumbprint);
+            var config = _configManager.GetConfigurationAsync().Result;
+            var audience = string.Format(@"https://logon.microsoftonline.com/{0}/auth2/token", MiddleTierTennant);
+            var jwt = CryptoUtils.CreateClientAssertionWithPOP(MiddleTierClientId, audience, CryptoUtils.CreateRsaSecurityKey(), new SigningCredentials(new X509SecurityKey(cert), SecurityAlgorithms.RsaSha256));
+            var jwtToken = new JwtSecurityToken(jwt);
+            var client = new HttpClient();
+            var request = new HttpRequestMessage
+            {
+                Content = new FormUrlEncodedContent(GetPopAppTokenParameters(jwt, MiddleTierClientId)),
+                Method = HttpMethod.Post,
+                RequestUri = new Uri(config.TokenEndpoint)
             };
 
-            // public const string ClientAssertionType = "client_assertion_type" == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
-            // public const string ClientAssertion = "client_assertion";
-            // public const string GrantType = "grant_type";
-            // public const string Resource = "resource";
-            //return parameters;
+            var response = client.SendAsync(request).Result;
+            if (response.IsSuccessStatusCode)
+                return OAuthTokenResponse.Create(response.Content.ReadAsStringAsync().Result);
+
+            throw new OAuthTokenResponseException(response.ToString());
         }
 
-        //        var authenticationContext = new AuthenticationContext(authority, false, null);
-        //        var clientAssertion = new ClientAssertionCertificate(MiddleTierClientId, cert);
-        // var clientCred = new ClientAssertion(MiddleTierClientId, jwt);
-
-        public static string GetPopAppToken(string authority)
+        public static JwtSecurityTokenHandler TokenHandler
         {
-            //string resource = "http://S2SBackend";
-
-            //var client = new HttpClient();
-            //var request = new HttpRequestMessage(HttpMethod.Post, requestUrl);
-            //request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
-            //var response = client.SendAsync(request).Result;
-
-
-            //var cert = FindCertificate(StoreName.My, StoreLocation.LocalMachine, MiddleTierThumbprint);
-            //var authenticationContext = new AuthenticationContext(authority, false, null);
-            //var clientAssertion = new ClientAssertionCertificate(clientId, cert);
-
-            //// This token represents an access token between the two services.
-            //// Ideally it would be obtained once and refreshed, using the refresh token, when expired.
-
-            //var authenticationResult = authenticationContext.AcquireTokenAsync(resource, clientAssertion).Result;
-            //return authenticationResult.AccessToken;
-
-            return string.Empty;
+            get
+            {
+                var tokenHandler = new JwtSecurityTokenHandler();
+                tokenHandler.InboundClaimTypeMap.Clear();
+                return tokenHandler;
+            }
         }
     }
-
-}
-
-
 }
