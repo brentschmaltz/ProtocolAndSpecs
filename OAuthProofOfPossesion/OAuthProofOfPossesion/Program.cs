@@ -26,135 +26,140 @@
 //------------------------------------------------------------------------------
 
 using System;
-using System.Collections.Generic;
-using System.IdentityModel.Tokens.Jwt;
-using System.Net.Http;
+using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using Microsoft.IdentityModel.Protocols;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using System.Text;
+using Microsoft.IdentityModel.S2S;
 using Microsoft.IdentityModel.Tokens;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace OAuthProofOfPossesion
 {
     class Program
     {
-        private static ConfigurationManager<OpenIdConnectConfiguration> _configManager = new ConfigurationManager<OpenIdConnectConfiguration>(Authority + ".well-known/openid-configuration", new OpenIdConnectConfigurationRetriever());
-
-        // S2SMiddleTier metadata
-        public const string MiddleTierAddress = "http://localhost:38273/";
-        public const string MiddleTierClientId = "2d149917-123d-4ba3-8774-327b875f5540";
-        public const string MiddleTierEndpoint = MiddleTierAddress + "api/AccessTokenProtected/ProtectedApi";
-        public const string MiddleTierTennant = "add29489-7269-41f4-8841-b63c95564420";
-        public const string MiddleTierThumbprint = "8BDD5C76F165FA88C5A73E978D0522C47F934C90";
-
-        // public constants related to this site: S2SWebSite
-        public const string Address = "http://localhost:38272/";
-        public const string Authority = "https://login.microsoftonline.com/cyrano.onmicrosoft.com/";
-        public const string ClientId = "905a5e2a-ebf5-4b70-8eb0-fd26303b6a5f";
-        public const string RedirectUri = Address;
-        public const string Resource = "http://S2SBackend";
-        public const string Thumbprint = "5C346E0642C1113812C7775F0CB5336D8DFAFC4B";
+        public const string Thumbprint = "8BDD5C76F165FA88C5A73E978D0522C47F934C90";
+        public const string AccessToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6Ik1uQ19WWmNBVGZNNXBPWWlKSE1iYTlnb0VLWSIsImtpZCI6Ik1uQ19WWmNBVGZNNXBPWWlKSE1iYTlnb0VLWSJ9.eyJhdWQiOiIyZDE0OTkxNy0xMjNkLTRiYTMtODc3NC0zMjdiODc1ZjU1NDAiLCJpc3MiOiJodHRwczovL3N0cy53aW5kb3dzLm5ldC9hZGQyOTQ4OS03MjY5LTQxZjQtODg0MS1iNjNjOTU1NjQ0MjAvIiwiaWF0IjoxNDY3NDk3MDU1LCJuYmYiOjE0Njc0OTcwNTUsImV4cCI6MTQ2NzUwMDk1NSwiYWNyIjoiMSIsImFtciI6WyJwd2QiXSwiYXBwaWQiOiI5MDVhNWUyYS1lYmY1LTRiNzAtOGViMC1mZDI2MzAzYjZhNWYiLCJhcHBpZGFjciI6IjIiLCJmYW1pbHlfbmFtZSI6IjEiLCJnaXZlbl9uYW1lIjoiVXNlciIsImlwYWRkciI6IjUwLjQ2LjE1OS41MyIsIm5hbWUiOiJVc2VyMSIsIm9pZCI6ImQxYWQ5Y2U3LWIzMjItNDIyMS1hYjc0LTFlMTAxMWUxYmJjYiIsInNjcCI6InVzZXJfaW1wZXJzb25hdGlvbiBXcml0ZURhdGEiLCJzdWIiOiJNQVM2Y05OallPVUtqRXpLbzViY3NsUHJ6LWhoMXNGUjR1RHlaNkxZQ1gwIiwidGlkIjoiYWRkMjk0ODktNzI2OS00MWY0LTg4NDEtYjYzYzk1NTY0NDIwIiwidW5pcXVlX25hbWUiOiJVc2VyMUBDeXJhbm8ub25taWNyb3NvZnQuY29tIiwidXBuIjoiVXNlcjFAQ3lyYW5vLm9ubWljcm9zb2Z0LmNvbSIsInZlciI6IjEuMCJ9.llJNEvD5pIUL-eEDtUQhlXdOa9Wuklks_vQkJzlW2hM6WKEj_1_uZhh2bbjEGMB1HwlZXEjKatLc40mR56oSZrdGhz38TlN7Mxu3G7z4kisiJzIrz7p-Jj-R124y1IwKPHNv5dky0evZ0K84TUx6g3nU06y2FbqyO99TR2YqHTwjYbgYy5oXIIHgEgKGnXtZq61nODWSLiJis3-49R3YNKdt8GxcJuPYS_EYdFilTT9vye7akJZtPhMhmcQPQen3GsgJz80UGQk-OkPrmdXYtdWmgtd0-JHb3GnenCGhB6jaLUTkCH0GCi3R4QnTSxlQI2wuEB2b6lNz9lDqSpGVUg";
+        public const string AppToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6Ik1uQ19WWmNBVGZNNXBPWWlKSE1iYTlnb0VLWSIsImtpZCI6Ik1uQ19WWmNBVGZNNXBPWWlKSE1iYTlnb0VLWSJ9.eyJhdWQiOiJodHRwOi8vUzJTQmFja2VuZCIsImlzcyI6Imh0dHBzOi8vc3RzLndpbmRvd3MubmV0L2FkZDI5NDg5LTcyNjktNDFmNC04ODQxLWI2M2M5NTU2NDQyMC8iLCJpYXQiOjE0Njc0OTczMzAsIm5iZiI6MTQ2NzQ5NzMzMCwiZXhwIjoxNDY3NTAxMjMwLCJhcHBpZCI6IjJkMTQ5OTE3LTEyM2QtNGJhMy04Nzc0LTMyN2I4NzVmNTU0MCIsImFwcGlkYWNyIjoiMiIsImlkcCI6Imh0dHBzOi8vc3RzLndpbmRvd3MubmV0L2FkZDI5NDg5LTcyNjktNDFmNC04ODQxLWI2M2M5NTU2NDQyMC8iLCJvaWQiOiI5MTkxOTZmNi0zOGZkLTQ2ZjMtODY4Ni1hNDllMjk0NGIyNzciLCJzdWIiOiI5MTkxOTZmNi0zOGZkLTQ2ZjMtODY4Ni1hNDllMjk0NGIyNzciLCJ0aWQiOiJhZGQyOTQ4OS03MjY5LTQxZjQtODg0MS1iNjNjOTU1NjQ0MjAiLCJ2ZXIiOiIxLjAifQ.QLOroZZY53Gj97VuI2X66dxZ6vDIfJlDBwsDTAMJR8FcugucpWTyMtkCm9JcOHOb78lBwaMTJlOwUcb7qrwRrtjkxGCI3hUw-LBPREqM-AowlrUk1ORvB4CV7zDqH6m6s0LL91I3JpQEhMsQxo1OfcYyDR-vKJ5ybprYUgMIKmPeqGbUMLYDCwO9-0efl3LCdyI3FRlcbDg1960z2OlgmbFSlpQiT4bDDHszx1W0G0mJjO8Ypkfh3z_aBBoclkSR34lV_htJlCcW0CM7dopOzHACljCiJWgDh_q5pULLIWeGnYFKLtJZR7wSKp18a-k28xT_S1fgMqFooZ0r-5i3kA";
 
         static void Main(string[] args)
         {
-            var config = _configManager.GetConfigurationAsync().Result;
-            var appTokenResponse = GetAppToken(Authority);
-            var principal = TokenHandler.ValidateToken(
-                                appTokenResponse.AccessToken,
-                                new TokenValidationParameters
-                                {
-                                    ValidIssuer = config.Issuer,
-                                    ValidAudience = Resource,
-                                    IssuerSigningKeys = config.SigningKeys
-                                },
-                                out SecurityToken token
-                            );
-
-            var popAppTokenResponse = GetPopAppToken(Authority);
-        }
-
-        public static OAuthTokenResponse GetAppToken(string authority)
-        {
-            string resource = "http://S2SBackend";
-            var cert = CryptoUtils.FindCertificate(StoreName.My, StoreLocation.LocalMachine, MiddleTierThumbprint);
-            var config = _configManager.GetConfigurationAsync().Result;
-            var audience = string.Format(@"https://sts.windows.net/{0}/", MiddleTierTennant);
-            var jwt = CryptoUtils.CreateClientAssertion(MiddleTierClientId, audience, new SigningCredentials(new X509SecurityKey(cert), SecurityAlgorithms.RsaSha256));
-            var client = new HttpClient();
-            var request = new HttpRequestMessage
+            var cert = CryptoUtils.FindCertificate(StoreName.My, StoreLocation.LocalMachine, Thumbprint);
+            var signingCredentials = new SigningCredentials(new X509SecurityKey(cert), SecurityAlgorithms.RsaSha256, SecurityAlgorithms.Sha256);
+            var requestData = new SignedHttpRequestData
             {
-                Content = new FormUrlEncodedContent(GetAppTokenParameters(jwt)),
-                Method = HttpMethod.Post,
-                RequestUri = new Uri(config.TokenEndpoint)
+                AppToken = AppToken,
+                PayloadToken = AccessToken,
+                PayloadTokenType = "PFT",
+                Request = new Uri("https://a.com/b/c?d=e"),
+                RequestMethod = "GET",
+                SigningCredentials = new SigningCredentials(new X509SecurityKey(cert), SecurityAlgorithms.RsaSha256, SecurityAlgorithms.Sha256)
             };
 
-            var response = client.SendAsync(request).Result;
-            if (response.IsSuccessStatusCode)
-                return OAuthTokenResponse.Create(response.Content.ReadAsStringAsync().Result);
 
-            throw new OAuthTokenResponseException(response.ToString());
-        }
-
-        public static Dictionary<string, string> GetAppTokenParameters(string assertion)
-        {
-            return new Dictionary<string, string>
+            var header = new JObject
             {
-                {"client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"},
-                {"client_assertion", assertion},
-                {"grant_type", "client_credentials"},
-                {"resource", Resource}
-            };
-        }
-
-
-//  To obtain a proof-of-possession protected token, an extension of the client credential flow is used. 
-//	POST https://login.microsoftonline.com/consumers/oauth2/v2.0/token
-//	grant_type=client_credentials&//  client_id=2f600644-04bb-460c-93a5-e525d00118b2&//  scope=5d344dd6-5fa0-4eee-83fc-98d688c96864/.default&//  request=eyJhbGci...
-//	The request parameter is a signed JWT Request based on Open ID Connect. It will contain the proof-of-possession key. 
-//	{//      "typ":"JWT",//      "alg":"RS256",//      "x5t":"B2J4nSsaX6R5VjjuTjGlHV9S6_U"//  }//  .//  {//      "aud":"https://login.microsoftonline.com/consumers/oauth2/v2.0/token"//      "iss":"2f600644-04bb-460c-93a5-e525d00118b2"//      "iat":1489707630,//      "exp":1489711230,//      "pop_jwk":{"kty":"RSA","n":"0vx7agoebGcQSu5JsGY4Hc5n9y...","e":"AQAB","alg":"RS256","kid":"1"}//  }//.//[Signature with registered app key]
-
-        public static Dictionary<string, string> GetPopAppTokenParameters(string assertion, string clientId)
-        {
-            return new Dictionary<string, string>
-            {
-                {"grant_type", "client_credentials"},
-                {"clientId", clientId },
-                //{"scope", "95af3226-0b0c-42ab-abac-2ea26bd0e6a8/.default" },
-                {"resource", Resource },
-                {"request", assertion}
-            };
-        }		
-
-        public static OAuthTokenResponse GetPopAppToken(string authority)
-        {
-            var cert = CryptoUtils.FindCertificate(StoreName.My, StoreLocation.LocalMachine, MiddleTierThumbprint);
-            var config = _configManager.GetConfigurationAsync().Result;
-            var audience = string.Format(@"https://logon.microsoftonline.com/{0}/auth2/token", MiddleTierTennant);
-            var jwt = CryptoUtils.CreateClientAssertionWithPOP(MiddleTierClientId, audience, CryptoUtils.CreateRsaSecurityKey(), new SigningCredentials(new X509SecurityKey(cert), SecurityAlgorithms.RsaSha256));
-            var jwtToken = new JwtSecurityToken(jwt);
-            var client = new HttpClient();
-            var request = new HttpRequestMessage
-            {
-                Content = new FormUrlEncodedContent(GetPopAppTokenParameters(jwt, MiddleTierClientId)),
-                Method = HttpMethod.Post,
-                RequestUri = new Uri(config.TokenEndpoint)
+                { "typ", "JWT" },
+                { "alg", "RS256" },
+                { "x5t", Base64UrlEncoder.Encode((signingCredentials.Key as X509SecurityKey).Certificate.GetCertHash()) }
             };
 
-            var response = client.SendAsync(request).Result;
-            if (response.IsSuccessStatusCode)
-                return OAuthTokenResponse.Create(response.Content.ReadAsStringAsync().Result);
+            var encodedHeader = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes(header.ToString(Formatting.None))) + ".";
+            var cryptoFactory = signingCredentials.CryptoProviderFactory ?? signingCredentials.Key.CryptoProviderFactory;
+            var hashAlgorithm = cryptoFactory.CreateHashAlgorithm(signingCredentials.Digest);
+            var signatureProvider = cryptoFactory.CreateForSigning(signingCredentials.Key, signingCredentials.Algorithm);
 
-            throw new OAuthTokenResponseException(response.ToString());
-        }
+            var results = new double[5];
+            results[0] = 0;
+            results[1] = 0;
+            results[2] = 0;
+            results[3] = 0;
+            results[4] = 0;
 
-        public static JwtSecurityTokenHandler TokenHandler
-        {
-            get
+            var numberOfIterations = 1500;
+            var totalIterations = 0;
+            var totalLoops = 6;
+            Console.WriteLine($"Start test: iterations per loop: {numberOfIterations}.");
+            for (int loops = 0; loops < totalLoops; loops++)
             {
-                var tokenHandler = new JwtSecurityTokenHandler();
-                tokenHandler.InboundClaimTypeMap.Clear();
-                return tokenHandler;
+                Console.WriteLine($"Start    loop: {loops+1} of {totalLoops}.");
+                PerfTest(results, numberOfIterations, requestData, signatureProvider, hashAlgorithm, encodedHeader);
+                Console.WriteLine($"Finished loop: {loops+1} of {totalLoops}.");
+                totalIterations += numberOfIterations;
             }
+
+            Console.WriteLine($"Results ===================================");
+            Console.WriteLine($"Wilson:        '{results[0]}', Iterations: '{totalIterations}'.");
+            Console.WriteLine($"JObject:       '{results[1]}', Iterations: '{totalIterations}'.");
+            Console.WriteLine($"Fixed Crypto:  '{results[2]}', Iterations: '{totalIterations}'.");
+            Console.WriteLine($"StringBuilder: '{results[3]}', Iterations: '{totalIterations}'.");
+            Console.WriteLine($"StringCat:     '{results[4]}', Iterations: '{totalIterations}'.");
+            Console.WriteLine("Press any key.");
+            Console.ReadKey();
+        }
+
+        static void PerfTest(double[] results, int numberOfIterations, SignedHttpRequestData requestData, SignatureProvider signatureProvider, HashAlgorithm hashAlgorithm, string encodedHeader)
+        {
+            RunTests(results, requestData, numberOfIterations, 0, null, null, null);
+            RunTests(results, requestData, numberOfIterations, 2, signatureProvider, hashAlgorithm, encodedHeader);
+            RunTests(results, requestData, numberOfIterations, 1, null, null, null);
+            RunTests(results, requestData, numberOfIterations, 3, signatureProvider, hashAlgorithm, encodedHeader);
+            RunTests(results, requestData, numberOfIterations, 4, signatureProvider, hashAlgorithm, encodedHeader);
+            RunTests(results, requestData, numberOfIterations, 3, signatureProvider, hashAlgorithm, encodedHeader);
+            RunTests(results, requestData, numberOfIterations, 1, null, null, null);
+            RunTests(results, requestData, numberOfIterations, 0, null, null, null);
+            RunTests(results, requestData, numberOfIterations, 4, signatureProvider, hashAlgorithm, encodedHeader);
+            RunTests(results, requestData, numberOfIterations, 2, signatureProvider, hashAlgorithm, encodedHeader);
+        }
+
+        public static double RunTests(double[] results, SignedHttpRequestData requestData, int numberOfIterations, int test, SignatureProvider signatureProvider, HashAlgorithm hashAlgorithm, string encodedHeader)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            if (test == 0)
+            {
+                for (int i = 0; i < numberOfIterations; i++)
+                {
+                    var testRun = new TestRun();
+                    testRun.CreatePopAuthenticatorWithWilson(requestData);
+                }
+            }
+            else if (test == 1)
+            {
+                for (int i = 0; i < numberOfIterations; i++)
+                {
+                    var testRun = new TestRun();
+                    testRun.CreatePopAuthenticator(requestData);
+                }
+            }
+            else if (test == 2)
+            {
+                for (int i = 0; i < numberOfIterations; i++)
+                {
+                    var testRun = new TestRun();
+                    testRun.CreatePopAuthenticator(requestData, signatureProvider, hashAlgorithm, encodedHeader);
+                }
+            }
+            else if (test == 3)
+            {
+                for (int i = 0; i < numberOfIterations; i++)
+                {
+                    var testRun = new TestRun();
+                    testRun.CreatePopAuthenticatorStringBuilder(requestData, signatureProvider, hashAlgorithm, encodedHeader);
+                }
+            }
+            else if (test == 4)
+            {
+                for (int i = 0; i < numberOfIterations; i++)
+                {
+                    var testRun = new TestRun();
+                    testRun.CreatePopAuthenticatorStringCat(requestData, signatureProvider, hashAlgorithm, encodedHeader);
+                }
+            }
+
+            sw.Stop();
+            results[test] += sw.Elapsed.TotalMilliseconds;
+            return sw.Elapsed.TotalMilliseconds;
         }
     }
 }

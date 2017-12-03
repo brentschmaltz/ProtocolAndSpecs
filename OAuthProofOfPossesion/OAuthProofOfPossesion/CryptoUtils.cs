@@ -26,11 +26,15 @@
 //------------------------------------------------------------------------------
 
 using System;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
+using System.Collections.Specialized;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using Newtonsoft.Json.Linq;
+using static System.Net.WebUtility;
+using System.Net;
+using System.Collections.Generic;
 
 namespace OAuthProofOfPossesion
 {
@@ -39,42 +43,6 @@ namespace OAuthProofOfPossesion
     /// </summary>
     public static class CryptoUtils
     {
-        // TODO - add overload for keySize.
-        // TODO - should this be in IM.Tokens.CryptoProvider?
-        public static RsaSecurityKey CreateRsaSecurityKey()
-        {
-            // NETSTANDARD1_6 has RSA.Create(int) - which is xplat use RSACryptoServiceProvider for NET451 and NET45 
-            var rsa = new RSACryptoServiceProvider(2048);
-            var parameters = rsa.ExportParameters(false);
-            return new RsaSecurityKey(parameters);
-        }
-
-        public static string CreateClientAssertionWithPOP(string clientId, string audience, RsaSecurityKey popKey, SigningCredentials signingCredentials)
-        {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var modulus = Base64UrlEncoder.Encode(popKey.Parameters.Modulus);
-            var exponent = Base64UrlEncoder.Encode(popKey.Parameters.Exponent);
-            var claimValue = $"\"kty\":\"RSA\", \"n\":\"{modulus}\",\"e\"{exponent}\",\"alg\":\"RS256\",\"kid\":\"1\"";
-            var identity = new ClaimsIdentity(new Claim[] {
-                                new Claim("pop_jwk", claimValue),
-                                new Claim("sub", clientId)
-            });
-
-            var jwt = tokenHandler.CreateEncodedJwt(clientId, audience, identity, DateTime.UtcNow, DateTime.UtcNow + TimeSpan.FromHours(1), DateTime.UtcNow, signingCredentials);
-            return jwt;
-        }
-
-        public static string CreateClientAssertion(string clientId, string audience, SigningCredentials signingCredentials)
-        {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var identity = new ClaimsIdentity(new Claim[] { new Claim("sub", clientId) });
-            var jwt = tokenHandler.CreateJwtSecurityToken(clientId, audience, identity, DateTime.UtcNow, DateTime.UtcNow + TimeSpan.FromHours(1), DateTime.UtcNow, signingCredentials);
-            jwt.Header["x5t"] = Base64UrlEncoder.Encode((signingCredentials.Key as X509SecurityKey).Certificate.GetCertHash());
-            jwt.Header["kid"] = Base64UrlEncoder.Encode((signingCredentials.Key as X509SecurityKey).Certificate.GetCertHash());
-
-            return tokenHandler.WriteToken(jwt);
-        }
-
         public static X509Certificate2 FindCertificate(StoreName storeName, StoreLocation storeLocation, string thumbprint)
         {
             X509Store x509Store = new X509Store(storeName, storeLocation);
